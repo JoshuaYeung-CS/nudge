@@ -1,0 +1,16 @@
+.DS_Store
+.build/
+.swiftpm/
+build/
+dist/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+*.log
+__pycache__/
+*.pyc
+.venv/
+
+# Built app bundles
+Nudge.app/
+*.dmg
