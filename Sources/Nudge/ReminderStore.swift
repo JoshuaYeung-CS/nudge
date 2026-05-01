@@ -2,6 +2,8 @@ import Foundation
 
 struct AppState: Codable {
     var reminders: [Reminder] = []
+    var quietHours: QuietHours? = nil
+    var paused: Bool = false
 }
 
 /// Reads and writes app state to ~/Library/Application Support/Nudge/state.json.

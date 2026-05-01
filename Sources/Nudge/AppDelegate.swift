@@ -7,20 +7,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "bell", accessibilityDescription: "Nudge")
-            button.image?.isTemplate = true
-        }
 
         let initial = store.load()
         engine.setReminders(initial.reminders)
+        engine.quietHours = initial.quietHours
+        engine.paused = initial.paused
         engine.onChange = { [weak self] in
             guard let self else { return }
             self.persist()
             self.rebuildMenu()
+            self.refreshStatusIcon()
         }
         engine.start()
+
         rebuildMenu()
+        refreshStatusIcon()
+
+        // Tick the icon every minute so the quiet-hours overlay flips on/off
+        // without the user opening the menu.
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            self?.refreshStatusIcon()
+        }
+    }
+
+    // MARK: - Status icon
+
+    private func refreshStatusIcon() {
+        guard let button = statusItem.button else { return }
+        let symbol: String
+        if engine.paused {
+            symbol = "bell.slash"
+        } else if engine.quietHours?.isActive() == true {
+            symbol = "moon"
+        } else {
+            symbol = "bell"
+        }
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Nudge")
+        button.image?.isTemplate = true
     }
 
     // MARK: - Menu
@@ -39,9 +62,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
-
         let addItem = NSMenuItem(title: "Add reminder…", action: #selector(addReminder), keyEquivalent: "n")
         menu.addItem(addItem)
+
+        menu.addItem(.separator())
+
+        let pauseTitle = engine.paused ? "Resume all" : "Pause all"
+        menu.addItem(NSMenuItem(title: pauseTitle, action: #selector(togglePauseAll), keyEquivalent: ""))
+
+        menu.addItem(quietHoursItem())
 
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "About Nudge", action: #selector(showAbout), keyEquivalent: ""))
@@ -89,6 +118,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return item
     }
 
+    private func quietHoursItem() -> NSMenuItem {
+        let title: String
+        if let q = engine.quietHours {
+            let active = q.isActive() ? " (active)" : ""
+            title = "Quiet hours: \(q.description)\(active)"
+        } else {
+            title = "Quiet hours: off"
+        }
+
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.addItem(NSMenuItem(title: "Set…", action: #selector(setQuietHours), keyEquivalent: ""))
+        if engine.quietHours != nil {
+            let disable = NSMenuItem(title: "Disable", action: #selector(disableQuietHours), keyEquivalent: "")
+            submenu.addItem(disable)
+        }
+        for sub in submenu.items where sub.target == nil && sub.action != nil {
+            sub.target = self
+        }
+        item.submenu = submenu
+        return item
+    }
+
     // MARK: - Actions
 
     @objc private func addReminder() {
@@ -108,7 +160,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let index = current.firstIndex(where: { $0.id == id }) else { return }
         current[index].enabled.toggle()
         if current[index].enabled {
-            // Reset the clock so resuming doesn't fire instantly.
             current[index].lastFiredAt = Date()
         }
         engine.setReminders(current)
@@ -132,6 +183,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.setReminders(current)
     }
 
+    @objc private func togglePauseAll() {
+        engine.setPaused(!engine.paused)
+    }
+
+    @objc private func setQuietHours() {
+        let alert = NSAlert()
+        alert.messageText = "Quiet hours"
+        alert.informativeText = "Format: HH:MM-HH:MM (24h). Wraps midnight if end is earlier than start."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = engine.quietHours?.description.replacingOccurrences(of: "–", with: "-") ?? "22:00-08:00"
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let parsed = QuietHours.parse(field.stringValue) else { return }
+        engine.setQuietHours(parsed)
+    }
+
+    @objc private func disableQuietHours() {
+        engine.setQuietHours(nil)
+    }
+
     @objc private func showAbout() {
         let alert = NSAlert()
         alert.messageText = "Nudge"
@@ -142,6 +218,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Persistence
 
     private func persist() {
-        store.save(AppState(reminders: engine.reminders))
+        store.save(AppState(
+            reminders: engine.reminders,
+            quietHours: engine.quietHours,
+            paused: engine.paused
+        ))
     }
 }

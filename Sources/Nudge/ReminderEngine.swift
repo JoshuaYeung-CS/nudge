@@ -3,6 +3,9 @@ import Foundation
 /// Owns the live list of reminders and the timer that fires them.
 final class ReminderEngine {
     private(set) var reminders: [Reminder] = []
+    var quietHours: QuietHours?
+    var paused: Bool = false
+
     private var timer: Timer?
     var onChange: (() -> Void)?
 
@@ -27,8 +30,21 @@ final class ReminderEngine {
         onChange?()
     }
 
+    func setQuietHours(_ hours: QuietHours?) {
+        quietHours = hours
+        onChange?()
+    }
+
+    func setPaused(_ value: Bool) {
+        paused = value
+        onChange?()
+    }
+
     private func tick() {
         let now = Date()
+        if paused { return }
+        if quietHours?.isActive(at: now) == true { return }
+
         var changed = false
         for index in reminders.indices {
             guard reminders[index].enabled else { continue }
