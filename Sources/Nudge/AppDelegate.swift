@@ -1,5 +1,10 @@
 import AppKit
 
+private struct SnoozeRequest {
+    let id: UUID
+    let minutes: Int
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let engine = ReminderEngine()
@@ -85,8 +90,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func reminderItem(for reminder: Reminder) -> NSMenuItem {
         let mark = reminder.enabled ? "•" : "○"
+        var suffix = "every \(reminder.intervalDescription)"
+        if let snooze = reminder.snoozedUntil, snooze > Date() {
+            let f = DateFormatter()
+            f.dateFormat = "HH:mm"
+            suffix = "snoozed until \(f.string(from: snooze))"
+        }
         let item = NSMenuItem(
-            title: "\(mark) \(reminder.message) — every \(reminder.intervalDescription)",
+            title: "\(mark) \(reminder.message) — \(suffix)",
             action: nil,
             keyEquivalent: ""
         )
@@ -106,6 +117,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.representedObject = reminder.id
         edit.target = self
         submenu.addItem(edit)
+
+        submenu.addItem(.separator())
+
+        for minutes in [15, 30, 60] {
+            let snooze = NSMenuItem(
+                title: "Snooze \(minutes)m",
+                action: #selector(snoozeReminder(_:)),
+                keyEquivalent: ""
+            )
+            snooze.representedObject = SnoozeRequest(id: reminder.id, minutes: minutes)
+            snooze.target = self
+            submenu.addItem(snooze)
+        }
 
         submenu.addItem(.separator())
 
@@ -180,6 +204,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let id = sender.representedObject as? UUID else { return }
         var current = engine.reminders
         current.removeAll { $0.id == id }
+        engine.setReminders(current)
+    }
+
+    @objc private func snoozeReminder(_ sender: NSMenuItem) {
+        guard let req = sender.representedObject as? SnoozeRequest else { return }
+        var current = engine.reminders
+        guard let index = current.firstIndex(where: { $0.id == req.id }) else { return }
+        current[index].snoozedUntil = Date().addingTimeInterval(TimeInterval(req.minutes) * 60)
         engine.setReminders(current)
     }
 
