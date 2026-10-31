@@ -7,6 +7,8 @@ Built because every reminder app I tried either (a) buzzed my Apple Watch every
 15 minutes or (b) was a 50 MB Electron blob to do what `osascript` can do in
 one line.
 
+New here? Read [START_HERE.md](START_HERE.md).
+
 ```
 🔔 Nudge
 ─────────────────────────────────
